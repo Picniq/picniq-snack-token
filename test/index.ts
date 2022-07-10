@@ -24,13 +24,20 @@ describe("Stake", function () {
     const ACStake = await ethers.getContractFactory("AutoCompoundingPicniqToken");
     const acStake = await ACStake.deploy(stake.address);
 
+    console.log("Picniq Token deployed to:", token.address);
+    console.log(`${await acStake.name()} (${await acStake.symbol()}) deployed to:`, acStake.address);
+
     await acStake.deployed();
 
+    await token.connect(signers[0]).transfer(signers[2].address, ethers.utils.parseEther('1000'));
     await token.connect(signers[0]).approve(stake.address, ethers.constants.MaxUint256);
     await stake.connect(signers[0]).addRewardTokens(ethers.utils.parseEther('5000'));
 
     await token.connect(signers[1]).approve(acStake.address, ethers.constants.MaxUint256);
     await acStake.connect(signers[1]).deposit(ethers.utils.parseEther('1000'), signers[1].address);
+
+    await token.connect(signers[2]).approve(acStake.address, ethers.constants.MaxUint256);
+    await acStake.connect(signers[2]).deposit(ethers.utils.parseEther('1000'), signers[2].address);
 
     await ethers.provider.send("evm_increaseTime", [86400 * 30]);
     await ethers.provider.send("evm_mine", []);
@@ -42,27 +49,27 @@ describe("Stake", function () {
 
     await acStake.harvest();
     
-    console.log(await stake.balanceOf(signers[1].address));
-    console.log("Picniq Token deployed to:", token.address);
-    console.log(`${await acStake.name()} (${await acStake.symbol()}) deployed to:`, acStake.address);
+    const shares = await acStake.balanceOf(signers[1].address);
+    console.log(shares);
+    console.log(await acStake.convertToAssets(shares));
 
-    const assets = await acStake.convertToAssets(await acStake.balanceOf(signers[1].address));
-
-    // await acStake.connect(signers[1]).redeem(await acStake.balanceOf(signers[1].address), signers[1].address, signers[1].address);
-    console.log(await token.balanceOf(signers[1].address));
-    console.log(await stake.balanceOf(acStake.address));
+    const assets = await acStake.convertToAssets(await acStake.balanceOf(signers[2].address));
+    await acStake.connect(signers[2]).withdraw(assets, signers[2].address, signers[2].address);
+    await acStake.connect(signers[1]).redeem(await acStake.balanceOf(signers[1].address), signers[1].address, signers[1].address);
+    // console.log(await token.balanceOf(signers[1].address));
+    // console.log(await stake.balanceOf(acStake.address));
     // await acStake.connect(signers[1]).withdraw(assets, signers[1].address, signers[1].address);
-    await token.approve(acStake.address, ethers.constants.MaxUint256);
-    console.log(await token.balanceOf(signers[1].address));
-    console.log(await stake.balanceOf(acStake.address));
+    // await token.approve(acStake.address, ethers.constants.MaxUint256);
+    // console.log(await token.balanceOf(signers[1].address));
+    // console.log(await stake.balanceOf(acStake.address));
     // await acStake.connect(signers[0]).mint(ethers.utils.parseEther('500'), signers[0].address);
 
-    console.log(await token.balanceOf(signers[0].address));
-    console.log(await stake.balanceOf(acStake.address));
+    // console.log(await token.balanceOf(signers[0].address));
+    // console.log(await stake.balanceOf(acStake.address));
     // await acStake.connect(signers[0]).redeem(ethers.utils.parseEther('500'), signers[0].address, signers[0].address);
-    console.log(await token.balanceOf(signers[0].address));
-    console.log(await stake.balanceOf(acStake.address));
-    console.log(await token.balanceOf(acStake.address));
+    // console.log(await token.balanceOf(signers[0].address));
+    // console.log(await stake.balanceOf(acStake.address));
+    // console.log(await token.balanceOf(acStake.address));
     // await stake.connect(signers[1]).exit();
     
     // console.log(await token.balanceOf(stake.address));
