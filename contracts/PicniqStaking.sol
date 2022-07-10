@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.14;
+pragma solidity 0.8.15;
 
+import "hardhat/console.sol";
 import "./libraries/Math.sol";
-import "@openzeppelin/contracts/interfaces/IERC1820Registry.sol";
-import "@openzeppelin/contracts/token/ERC777/IERC777.sol";
-import "@openzeppelin/contracts/token/ERC777/IERC777Recipient.sol";
+import "./utils/Context.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract PicniqSingleStake is IERC777Recipient {
-    IERC1820Registry internal constant ERC1820_REGISTRY =
-        IERC1820Registry(0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24);
+// solhint-disable not-rely-on-time
+contract PicniqSingleStake is Context {
+
+    IERC20 internal immutable _token;
 
     RewardState private _state;
 
@@ -19,10 +20,10 @@ contract PicniqSingleStake is IERC777Recipient {
     mapping(address => uint256) private _balances;
 
     struct RewardState {
+        uint8 mutex;
         uint64 periodFinish;
         uint64 rewardsDuration;
         uint64 lastUpdateTime;
-        uint160 token;
         uint160 distributor;
         uint256 rewardRate;
         uint256 rewardPerTokenStored;
@@ -33,23 +34,18 @@ contract PicniqSingleStake is IERC777Recipient {
         address distributor,
         uint64 duration
     ) {
-        ERC1820_REGISTRY.setInterfaceImplementer(
-            address(this),
-            keccak256("ERC777TokensRecipient"),
-            address(this)
-        );
-
+        _state.mutex = 1;
         _state.rewardsDuration = duration;
-        _state.token = uint160(token);
+        _token = IERC20(token);
         _state.distributor = uint160(distributor);
     }
 
     function rewardToken() external view returns (address) {
-        return address(_state.token);
+        return address(_token);
     }
 
     function stakingToken() external view returns (address) {
-        return address(_state.token);
+        return address(_token);
     }
 
     function totalSupply() external view returns (uint256) {
@@ -90,67 +86,63 @@ contract PicniqSingleStake is IERC777Recipient {
         return _state.rewardRate * _state.rewardsDuration;
     }
 
-    function tokensReceived(
-        address,
-        address from,
-        address,
-        uint256 amount,
-        bytes calldata data,
-        bytes calldata
-    ) external {
-        _tokensReceived(IERC777(msg.sender), from, amount, data);
-    }
-
-    function _tokensReceived(
-        IERC777 token,
-        address from,
-        uint256 amount,
-        bytes calldata data
-    ) private {
-        require(token == IERC777(address(_state.token)), "Wrong token sent");
+    function stake(uint256 amount) external payable updateReward(_msgSender()) {
         require(amount > 0, "Must be greater than 0");
 
-        bytes32 decode = bytes32(abi.decode(data, (uint256)));
-        bytes32 reward = keccak256(abi.encodePacked(uint256(1)));
+        address sender = _msgSender();
+        console.logAddress(sender);
+        console.logAddress(msg.sender);
 
-        if (decode == reward) {
-            require(from == address(_state.distributor), "Must be distributor");
+        _token.transferFrom(sender, address(this), amount);
 
-            _notifyRewardAmount(amount, address(0));
-        } else {
-            _updateReward(from);
-
-            _totalSupply += amount;
-            _balances[from] += amount;
-
-            emit Staked(from, amount);
-        }
+        _totalSupply += amount;
+        _balances[sender] += amount;
     }
 
-    function withdraw(uint256 amount) public payable updateReward(msg.sender) {
+    function withdraw(uint256 amount) external payable nonReentrant updateReward(_msgSender()) {
         require(amount > 0, "Must be greater than 0");
+
+        address sender = _msgSender();
 
         _totalSupply -= amount;
-        _balances[msg.sender] -= amount;
-        IERC777(address(_state.token)).send(msg.sender, amount, "");
+        _balances[sender] -= amount;
+        _token.transfer(sender, amount);
 
-        emit Withdrawn(msg.sender, amount);
+        emit Withdrawn(sender, amount);
     }
 
-    function getReward() public payable updateReward(msg.sender) {
-        uint256 reward = _rewards[msg.sender];
+    function getReward() external payable nonReentrant updateReward(_msgSender()) {
+        address sender = _msgSender();
+
+        uint256 reward = _rewards[sender];
 
         if (reward > 0) {
-            _rewards[msg.sender] = 0;
-            IERC777(address(_state.token)).send(msg.sender, reward, "");
+            _rewards[sender] = 0;
+            _token.transfer(sender, reward);
 
-            emit RewardPaid(msg.sender, reward);
+            emit RewardPaid(sender, reward);
         }
     }
 
-    function exit() external payable {
-        withdraw(_balances[msg.sender]);
-        getReward();
+    function exit() external payable nonReentrant {
+        // Logic for updateReward is mixed in for efficiency
+        _state.rewardPerTokenStored = rewardPerToken();
+        _state.lastUpdateTime = uint64(lastTimeRewardApplicable());
+
+        address sender = _msgSender();
+
+        uint256 reward = earned(sender);
+        _userRewardPerTokenPaid[sender] = _state.rewardPerTokenStored;
+
+        uint256 balance = _balances[sender];
+        _totalSupply -= balance;
+        _balances[sender] = 0;
+        _rewards[sender] = 0;
+
+        _token.transfer(sender, balance + reward);
+
+        emit Withdrawn(sender, balance);
+        emit RewardPaid(sender, reward);
     }
 
     function notifyRewardAmount(uint256 reward)
@@ -169,7 +161,7 @@ contract PicniqSingleStake is IERC777Recipient {
                 _state.rewardsDuration;
         }
 
-        uint256 balance = IERC777(address(_state.token)).balanceOf(
+        uint256 balance = _token.balanceOf(
             address(this)
         ) - _totalSupply;
 
@@ -197,7 +189,7 @@ contract PicniqSingleStake is IERC777Recipient {
                 _state.rewardsDuration;
         }
 
-        uint256 balance = IERC777(address(_state.token)).balanceOf(
+        uint256 balance = _token.balanceOf(
             address(this)
         ) - _totalSupply;
 
@@ -222,15 +214,20 @@ contract PicniqSingleStake is IERC777Recipient {
         }
     }
 
+    function addRewardTokens(uint256 amount) external onlyDistributor
+    {
+        _token.transferFrom(_msgSender(), address(this), amount);
+        notifyRewardAmount(amount);
+    }
+
     function withdrawRewardTokens() external onlyDistributor
     {
         require(block.timestamp > _state.periodFinish, "Rewards still active");
 
-        IERC777 token = IERC777(address(_state.token));
         uint256 supply = _totalSupply;
-        uint256 balance = token.balanceOf(address(this));
+        uint256 balance = _token.balanceOf(address(this));
 
-        token.send(address(_state.distributor), balance - supply, "");
+        _token.transfer(address(_state.distributor), balance - supply);
         
         _notifyRewardAmount(0, address(0));
     }
@@ -242,10 +239,17 @@ contract PicniqSingleStake is IERC777Recipient {
 
     modifier onlyDistributor() {
         require(
-            msg.sender == address(_state.distributor),
+            _msgSender() == address(_state.distributor),
             "Must be distributor"
         );
         _;
+    }
+
+    modifier nonReentrant() {
+        require(_state.mutex == 1, "Nonreentrant");
+        _state.mutex = 2;
+        _;
+        _state.mutex = 1;
     }
 
     /* === EVENTS === */

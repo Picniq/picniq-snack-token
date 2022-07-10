@@ -1,31 +1,27 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.14;
+pragma solidity 0.8.15;
 
-import "@openzeppelin/contracts/token/ERC777/ERC777.sol";
-import "@openzeppelin/contracts/token/ERC777/IERC777Recipient.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./libraries/FixedPointMath.sol";
 import "./interfaces/ISingleAssetStake.sol";
 
 // solhint-disable check-send-result
-contract AutoCompoundingPicniqToken is ERC777 {
+contract AutoCompoundingPicniqToken is ERC20 {
     using FixedPointMath for uint256;
 
-    IERC1820Registry internal constant ERC1820_REGISTRY =
-        IERC1820Registry(0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24);
-
-    IERC777 private _asset;
+    IERC20 private immutable _asset;
     ISingleAssetStake private _staking;
 
-    constructor(address staking_, address[] memory defaultOperators)
-        ERC777 ("Auto Compounding Picniq Token", "xSNACK", defaultOperators) {
-            ERC1820_REGISTRY.setInterfaceImplementer(
-                address(this),
-                keccak256("ERC777TokensRecipient"),
-                address(this)
-            );
+    uint8 private _mutex;
+
+    constructor(address staking_)
+        ERC20 ("Auto Compounding Picniq Token", "xSNACK") {
             _staking = ISingleAssetStake(staking_);
-            _asset = IERC777(_staking.stakingToken());
+            _asset = IERC20(_staking.stakingToken());
+            _asset.approve(address(_staking), type(uint256).max);
+
+            _mutex = 1;
     }
 
     function asset() external view returns (address)
@@ -96,26 +92,27 @@ contract AutoCompoundingPicniqToken is ERC777 {
         return balanceOf(owner);
     }
 
-    function deposit(uint256 assets, address receiver) public returns (uint256)
+    function deposit(uint256 assets, address receiver) external returns (uint256)
     {
-        _staking.getReward();
         uint256 shares = previewDeposit(assets);
+
+        _staking.getReward();
         
         require(shares != 0, "Zero shares");
         
         uint256 balance = _asset.balanceOf(address(this));
-        bytes memory data = abi.encodePacked(uint256(2));
 
-        _asset.send(address(_staking), balance, data);
-
-        _mint(receiver, shares, "", "", false);
+        _asset.transferFrom(msg.sender, address(this), assets);
+        _staking.stake(assets + balance);
+        _mint(receiver, shares);
+        _approve(msg.sender, address(this), type(uint256).max);
 
         emit Deposit(msg.sender, receiver, assets, shares);
 
         return shares;
     }
 
-    function withdraw(uint256 assets, address receiver, address owner) external runHarvest returns (uint256)
+    function withdraw(uint256 assets, address receiver, address owner) external returns (uint256)
     {
         uint256 shares = previewWithdraw(assets);
 
@@ -126,17 +123,22 @@ contract AutoCompoundingPicniqToken is ERC777 {
             }
         }
 
-        _burn(owner, shares, "", "");
+        _burn(owner, shares);
 
         _staking.withdraw(assets);
-        _asset.send(receiver, assets, "");
+
+        _asset.transfer(receiver, assets);
+
+        _staking.getReward();
+        uint256 balance = _asset.balanceOf(address(this));
+        _staking.stake(balance);
 
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
 
         return shares;
     }
 
-    function redeem(uint256 shares, address receiver, address owner) external runHarvest returns (uint256)
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256)
     {
         uint256 assets = previewRedeem(shares);
 
@@ -149,69 +151,53 @@ contract AutoCompoundingPicniqToken is ERC777 {
 
         require(assets != 0, "No assets");
 
-        _burn(owner, shares, "", "");
+        _burn(owner, shares);
 
         _staking.withdraw(assets);
-        _asset.send(receiver, assets, "");
+        _asset.transfer(receiver, assets);
+
+        _staking.getReward();
+
+        uint256 balance = _asset.balanceOf(address(this));
+        _staking.stake(balance);
 
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
 
         return assets;
     }
 
-    function mint(uint256 shares, address receiver) public runHarvest returns (uint256)
+    function mint(uint256 shares, address receiver) external returns (uint256)
     {
         uint256 assets = previewMint(shares);
-        
-        IERC20(address(_asset)).transferFrom(msg.sender, address(this), assets);
+
+        _staking.getReward();
+        _asset.transferFrom(msg.sender, address(this), assets);
+
+        uint256 balance = _asset.balanceOf(address(this));
+        _staking.stake(balance);
+
+        _mint(msg.sender, shares);
+        _approve(msg.sender, address(this), type(uint256).max);
 
         emit Deposit(msg.sender, receiver, assets, shares);
 
         return assets;
     }
 
-    function tokensReceived(
-        address,
-        address from,
-        address,
-        uint256 amount,
-        bytes calldata,
-        bytes calldata
-    ) external {
-        _tokensReceived(IERC777(msg.sender), from, amount);
-    }
-
-    function _tokensReceived(
-        IERC777 token,
-        address from,
-        uint256 amount
-    ) private {
-        require(token == _asset, "Wrong token sent");
-        require(amount > 0, "Must be greater than 0");
-
-        if (from != address(_staking)) {
-            deposit(amount, from);
-        }
-    }
-
     function harvest() external
     {
         _staking.getReward();
-        bytes memory data = abi.encodePacked(uint256(2));
         uint256 balance = _asset.balanceOf(address(this));
-        _asset.send(address(_staking), balance, data);
+        _staking.stake(balance);
     }
 
-    modifier runHarvest()
+    modifier nonReentrant()
     {
-        _staking.getReward();
+        require(_mutex == 1, "Nonreentrant");
+
+        _mutex = 2;
         _;
-        bytes memory data = abi.encodePacked(uint256(2));
-        uint256 balance = _asset.balanceOf(address(this));
-        if (balance > 0) {
-            _asset.send(address(_staking), balance, data);    
-        }
-        
+        _mutex = 1;
     }
 
     event Deposit(address indexed caller, address indexed owner, uint256 assets, uint256 shares);
