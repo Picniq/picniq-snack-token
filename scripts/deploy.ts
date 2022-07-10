@@ -3,7 +3,12 @@
 //
 // When running the script with `npx hardhat run <script>` you'll find the Hardhat
 // Runtime Environment's members available in the global scope.
-import { ethers } from "hardhat";
+import { network, ethers } from "hardhat";
+import { MerkleTree } from "merkletreejs";
+import csv from "csv-parser";
+import { keccak256 } from "ethers/lib/utils";
+import fs from "fs";
+import json from "../scripts/encoded.json";
 
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command
@@ -18,7 +23,7 @@ async function main() {
   // We get the contract to deploy
   const Token = await ethers.getContractFactory("PicniqToken");
   const token = await Token.deploy(
-    ethers.utils.parseEther('25000000'),
+    ethers.utils.parseEther('10000000'),
     signers[0].address,
     signers[1].address,
     [],
@@ -27,19 +32,58 @@ async function main() {
 
   await token.deployed();
 
-  const Stake = await ethers.getContractFactory("PicniqSingleStake");
-  const stake = await Stake.deploy(token.address, signers[0].address, 86400 * 7);
-  
-  await stake.deployed();
+  let filename = __dirname + "/accounts.csv";
+  const addresses = Object.keys(json);
+  const values = Object.values(json);
 
-  let data = ethers.utils.solidityKeccak256(['uint256'], [1]);
-  await token.connect(signers[0]).send(stake.address, ethers.utils.parseEther('5'), data);
+  const list: {account: string, amount: string}[] = [];
+
+  fs.createReadStream(filename)
+      .pipe(csv())
+      .on("data", (row: any) => {
+          const user_dist = [row["account"], row["amount"]];
+          const account = user_dist[0];
+          const amount = user_dist[1];
+          list.push({account, amount});
+      }).on('end', async () => {
+          // await ethers.provider.send('evm_increaseTime', [86400 * 30 * 12]);
+          // await ethers.provider.send('evm_mine', []);
+          for (let i=0; i < addresses.length; i++) {
+              const address = addresses[i];
+              await network.provider.request({
+                  method: 'hardhat_impersonateAccount',
+                  params: [address]
+              });
+              const signer = await ethers.getSigner(address);
+              await network.provider.send("hardhat_setBalance", [
+                  address,
+                  "0x3130303030303030303030303030303030303030",
+              ]);
+              const amount = list.find((item: any) => item.account === address)?.amount ?? '0';
+              if (amount !== '0') {
+                  await token.connect(signer).claimAndVest(values[i].proof, ethers.utils.parseEther(amount), 6);
+                  console.log(signer.address, "staked: ", (await token.balanceOf(signer.address)).toString());
+                  console.log(signer.address, "vested: ", (await token.vestedOf(signer.address)).toString());
+                  await token.connect(signer).unvest();
+              }
+          }
+
+          console.log(await token.totalSupply());
+      })
+
+  // const Stake = await ethers.getContractFactory("PicniqSingleStake");
+  // const stake = await Stake.deploy(token.address, signers[0].address, 86400 * 7);
   
-  data = ethers.utils.solidityKeccak256(['uint256'], [2]);
-  await token.connect(signers[1]).send(stake.address, ethers.utils.parseEther('1.0'), data);
+  // await stake.deployed();
+
+  // let data = ethers.utils.solidityKeccak256(['uint256'], [1]);
+  // await token.connect(signers[0]).send(stake.address, ethers.utils.parseEther('5'), data);
   
-  console.log(await stake.balanceOf(signers[1].address));
-  console.log("Picniq Token deployed to:", token.address);
+  // data = ethers.utils.solidityKeccak256(['uint256'], [2]);
+  // await token.connect(signers[1]).send(stake.address, ethers.utils.parseEther('1.0'), data);
+  
+  // console.log(await stake.balanceOf(signers[1].address));
+  // console.log("Picniq Token deployed to:", token.address);
 }
 
 // We recommend this pattern to be able to use async/await everywhere
