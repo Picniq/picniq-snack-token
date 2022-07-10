@@ -2,7 +2,6 @@
 
 pragma solidity 0.8.15;
 
-import "hardhat/console.sol";
 import "./libraries/Math.sol";
 import "./utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -90,8 +89,6 @@ contract PicniqSingleStake is Context {
         require(amount > 0, "Must be greater than 0");
 
         address sender = _msgSender();
-        console.logAddress(sender);
-        console.logAddress(msg.sender);
 
         _token.transferFrom(sender, address(this), amount);
 

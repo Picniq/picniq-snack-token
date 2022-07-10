@@ -31,7 +31,7 @@ contract AutoCompoundingPicniqToken is ERC20 {
 
     function totalAssets() public view returns (uint256)
     {
-        return _staking.balanceOf(address(this)) + _staking.earned(address(this));
+        return _staking.balanceOf(address(this));
     }
 
     function convertToShares(uint256 assets) public view returns (uint256)
@@ -112,7 +112,7 @@ contract AutoCompoundingPicniqToken is ERC20 {
         return shares;
     }
 
-    function withdraw(uint256 assets, address receiver, address owner) external returns (uint256)
+    function withdraw(uint256 assets, address receiver, address owner) external runHarvest returns (uint256)
     {
         uint256 shares = previewWithdraw(assets);
 
@@ -124,21 +124,15 @@ contract AutoCompoundingPicniqToken is ERC20 {
         }
 
         _burn(owner, shares);
-
         _staking.withdraw(assets);
-
         _asset.transfer(receiver, assets);
-
-        _staking.getReward();
-        uint256 balance = _asset.balanceOf(address(this));
-        _staking.stake(balance);
-
+        
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
 
         return shares;
     }
 
-    function redeem(uint256 shares, address receiver, address owner) external returns (uint256)
+    function redeem(uint256 shares, address receiver, address owner) external runHarvest returns (uint256)
     {
         uint256 assets = previewRedeem(shares);
 
@@ -152,14 +146,8 @@ contract AutoCompoundingPicniqToken is ERC20 {
         require(assets != 0, "No assets");
 
         _burn(owner, shares);
-
         _staking.withdraw(assets);
         _asset.transfer(receiver, assets);
-
-        _staking.getReward();
-
-        uint256 balance = _asset.balanceOf(address(this));
-        _staking.stake(balance);
 
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
 
@@ -189,6 +177,16 @@ contract AutoCompoundingPicniqToken is ERC20 {
         _staking.getReward();
         uint256 balance = _asset.balanceOf(address(this));
         _staking.stake(balance);
+    }
+
+    modifier runHarvest()
+    {
+        _staking.getReward();
+        uint256 balance = _asset.balanceOf(address(this));
+        if (balance > 0) {
+            _staking.stake(balance);
+        }
+        _;
     }
 
     modifier nonReentrant()
