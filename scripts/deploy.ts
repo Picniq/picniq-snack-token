@@ -26,11 +26,13 @@ async function main() {
     ethers.utils.parseEther('10000000'),
     signers[0].address,
     signers[1].address,
-    [],
     "0xd30aa7828dbcad31659b8d89238fd3bb295937b880921ba163f8c1c3d6c2813c"
   );
 
   await token.deployed();
+
+  const vest = await ethers.getContractAt('PicniqVesting', await token.vesting());
+  const claim = await ethers.getContractAt('PicniqTokenClaim', await token.claim());
 
   let filename = __dirname + "/accounts.csv";
   const addresses = Object.keys(json);
@@ -39,37 +41,39 @@ async function main() {
   const list: {account: string, amount: string}[] = [];
 
   fs.createReadStream(filename)
-      .pipe(csv())
-      .on("data", (row: any) => {
-          const user_dist = [row["account"], row["amount"]];
-          const account = user_dist[0];
-          const amount = user_dist[1];
-          list.push({account, amount});
-      }).on('end', async () => {
-          // await ethers.provider.send('evm_increaseTime', [86400 * 30 * 12]);
-          // await ethers.provider.send('evm_mine', []);
-          for (let i=0; i < addresses.length; i++) {
-              const address = addresses[i];
-              await network.provider.request({
-                  method: 'hardhat_impersonateAccount',
-                  params: [address]
-              });
-              const signer = await ethers.getSigner(address);
-              await network.provider.send("hardhat_setBalance", [
-                  address,
-                  "0x3130303030303030303030303030303030303030",
-              ]);
-              const amount = list.find((item: any) => item.account === address)?.amount ?? '0';
-              if (amount !== '0') {
-                  await token.connect(signer).claimAndVest(values[i].proof, ethers.utils.parseEther(amount), 6);
-                  console.log(signer.address, "staked: ", (await token.balanceOf(signer.address)).toString());
-                  console.log(signer.address, "vested: ", (await token.vestedOf(signer.address)).toString());
-                  await token.connect(signer).unvest();
-              }
+  .pipe(csv())
+  .on("data", (row: any) => {
+      const user_dist = [row["account"], row["amount"]];
+      const account = user_dist[0];
+      const amount = user_dist[1];
+      list.push({account, amount});
+  }).on('end', async () => {
+      // await ethers.provider.send('evm_increaseTime', [86400 * 30 * 12]);
+      // await ethers.provider.send('evm_mine', []);
+      fs.writeFile('amounts.json', JSON.stringify(list), () => {});
+      for (let i=0; i < addresses.length; i++) {
+          const address = addresses[i];
+          await network.provider.request({
+              method: 'hardhat_impersonateAccount',
+              params: [address]
+          });
+          const signer = await ethers.getSigner(address);
+          await network.provider.send("hardhat_setBalance", [
+              address,
+              "0x3130303030303030303030303030303030303030",
+          ]);
+          const amount = list.find((item: any) => item.account === address)?.amount ?? '0';
+          if (amount !== '0') {
+              await claim.connect(signer).claimAndVest(values[i].proof, ethers.utils.parseEther(amount), 6);
+              console.log(signer.address, "balance:", ethers.utils.formatEther(await token.balanceOf(signer.address)));
           }
+      }
 
-          console.log(await token.totalSupply());
-      })
+      console.log('Total token supply:', ethers.utils.formatEther(await token.totalSupply()));
+      console.log('Leftover in claim contract:', ethers.utils.formatEther(await claim.leftover()));
+      console.log('Treasury holdings:', ethers.utils.formatEther(await token.balanceOf(signers[0].address)));
+      console.log('Team holdings:', ethers.utils.formatEther(await token.balanceOf(signers[1].address)));
+  })
 
   // const Stake = await ethers.getContractFactory("PicniqSingleStake");
   // const stake = await Stake.deploy(token.address, signers[0].address, 86400 * 7);
