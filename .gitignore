@@ -10,3 +10,6 @@ artifacts
 
 # System
 .DS_Store
+
+# Local node
+scripts/local.ts
