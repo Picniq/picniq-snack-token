@@ -34,6 +34,7 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
+      chainId: 1337,
       forking: {
         url: process.env.ETHEREUM_API || "",
         blockNumber: 14142559
