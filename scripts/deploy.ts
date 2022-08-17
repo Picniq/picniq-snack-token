@@ -64,7 +64,7 @@ async function main() {
           ]);
           const amount = list.find((item: any) => item.account === address)?.amount ?? '0';
           if (amount !== '0') {
-              await claim.connect(signer).claimAndVest(values[i].proof, ethers.utils.parseEther(amount), 6);
+              await claim.connect(signer).claimAndVest(values[i].proof, ethers.utils.parseEther(amount), 12);
               console.log(signer.address, "balance:", ethers.utils.formatEther(await token.balanceOf(signer.address)));
           }
       }
