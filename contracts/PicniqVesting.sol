@@ -9,7 +9,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract PicniqVesting is Context {
     using Address for address;
 
-    address public owner;
     IERC20 public immutable SNACK;
 
     uint256 public totalVested;
@@ -23,10 +22,8 @@ contract PicniqVesting is Context {
         uint256 withdrawn;
     }
 
-    constructor(IERC20 token_, address owner_) {
+    constructor(IERC20 token_) {
         SNACK = token_;
-
-        owner = owner_;
     }
 
     function vestedOfDetails(address account) external view returns (UserVest memory)
