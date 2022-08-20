@@ -7,8 +7,8 @@ async function main() {
     // If this script is run directly using `node` you may want to call compile
     // manually to make sure everything is compiled
     // await hre.run('compile');
-    const treasury = '0x';
-    const team = '0x';
+    const treasury = '0x135dD600c438e34B00eC08FeEbEB27d4980F6504';
+    const team = '0x131ABB7ec893241ca736C380c9274fa0a88E9410';
 
     const Token = await ethers.getContractFactory('PicniqToken');
     const token = await Token.deploy(
