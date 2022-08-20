@@ -2,6 +2,7 @@
 
 pragma solidity 0.8.16;
 
+import "hardhat/console.sol";
 import "./interfaces/IPicniqVesting.sol";
 import "./libraries/MerkleProof.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -49,8 +50,9 @@ contract PicniqTokenClaim {
         require(block.timestamp < end, "Claiming is over");
 
         uint256 decay = currentDecayPercent();
+        uint256 decayed = amount * 10 * decay / 1e18;
         uint256 max = amount * 10 * 1.25e18 / 1e18;
-        uint256 sendAmount = amount * 10 * decay / 1e18;
+        uint256 sendAmount = amount * 10 - decayed;
 
         leftover += max - sendAmount;
 
@@ -66,8 +68,9 @@ contract PicniqTokenClaim {
         uint256 decay = currentDecayPercent();
 
         uint256 bonus = length == 6 ? 1.1e18 : 1.25e18;
+        uint256 decayed = amount * 10 * decay / 1e18 * bonus / 1e18;
         uint256 max = (amount * 10) * 1.25e18 / 1e18;
-        uint256 total = (amount * 10 * decay / 1e18) * bonus / 1e18;
+        uint256 total = amount * 10 * bonus / 1e18 - decayed;
         uint256 vested = total / 2;
 
         leftover += max - total;
@@ -79,21 +82,20 @@ contract PicniqTokenClaim {
 
     function currentDecayPercent() public view returns (uint256)
     {
-        uint256 decay = 1e18;
 
         if (block.timestamp > _decayData.decayTime) {
             uint256 delta = block.timestamp - _decayData.decayTime;
             if (delta > 86400) {
-                uint256 newRate = (delta / 86400) * 1e18 / _decayData.decayRate;
-                if (newRate > (1e18 / 2)) {
-                    decay = newRate;
+                uint256 newRate = (delta / 86400) * _decayData.decayRate;
+                if (newRate < (1e18 / 2)) {
+                    return newRate;
                 } else {
-                    decay = 1e18 / 2;
+                    return 1e18 / 2;
                 }
             }
         }
 
-        return decay;
+        return 0;
     }
 
     function checkClaimed(address account) public view returns (bool)
