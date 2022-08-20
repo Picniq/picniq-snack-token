@@ -19,7 +19,7 @@ contract PicniqToken is ERC20Permit {
         uint256 airdropAmount = 463364 * 10 * 10**18;
         uint256 treasuryAmount = supply - teamAmount - airdropAmount;
 
-        vesting = new PicniqVesting(IERC20(this), _msgSender());
+        vesting = new PicniqVesting(IERC20(this));
         claim = new PicniqTokenClaim(IERC20(this), address(vesting), merkleRoot_, treasury);
 
         _mint(team, teamAmount);
