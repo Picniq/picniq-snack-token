@@ -15,7 +15,7 @@ describe("Claim", async function () {
         const token = await Token.deploy(
             ethers.utils.parseEther("10000000"),
             signers[0].address,
-            signers[1].address,
+            signers[0].address,
             "0xd30aa7828dbcad31659b8d89238fd3bb295937b880921ba163f8c1c3d6c2813c"
         );
 
@@ -46,7 +46,7 @@ describe("Claim", async function () {
             list.push({ account, amount });
         })
         .on("end", async () => {
-            await ethers.provider.send('evm_increaseTime', [86400 * 30 * 12]);
+            await ethers.provider.send('evm_increaseTime', [86400 * 31 * 12]);
             await ethers.provider.send('evm_mine', []);
 
             // addresses.map(async (item: any) => {

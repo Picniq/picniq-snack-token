@@ -7,7 +7,7 @@ async function main() {
     // If this script is run directly using `node` you may want to call compile
     // manually to make sure everything is compiled
     // await hre.run('compile');
-    const stake = '0x';
+    const stake = '0xf43d2FA5a45AcD97177F680f5f84F9707be7eB11';
 
     const Compound = await ethers.getContractFactory('AutoCompoundingPicniqToken');
     const compound = await Compound.deploy(stake);

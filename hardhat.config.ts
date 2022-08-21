@@ -37,8 +37,12 @@ const config: HardhatUserConfig = {
       chainId: 1337,
       forking: {
         url: process.env.ETHEREUM_API || "",
-        blockNumber: 14142559
+        blockNumber: 14142559,
       }
+    },
+    mainnet: {
+      url: process.env.ETHEREUM_API || "",
+      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : []
     },
     ropsten: {
       url: process.env.ROPSTEN_URL || "",

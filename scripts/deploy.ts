@@ -48,9 +48,8 @@ async function main() {
       const amount = user_dist[1];
       list.push({account, amount});
   }).on('end', async () => {
-      // await ethers.provider.send('evm_increaseTime', [86400 * 30 * 12]);
-      // await ethers.provider.send('evm_mine', []);
-      fs.writeFile('amounts.json', JSON.stringify(list), () => {});
+      await ethers.provider.send('evm_increaseTime', [86400 * 30 * 6]);
+      await ethers.provider.send('evm_mine', []);
       for (let i=0; i < addresses.length; i++) {
           const address = addresses[i];
           await network.provider.request({
@@ -64,7 +63,8 @@ async function main() {
           ]);
           const amount = list.find((item: any) => item.account === address)?.amount ?? '0';
           if (amount !== '0') {
-              await claim.connect(signer).claimAndVest(values[i].proof, ethers.utils.parseEther(amount), 12);
+              // await claim.connect(signer).claimTokens(values[i].proof, ethers.utils.parseEther(amount));
+              await claim.connect(signer).claimAndVest(values[i].proof, ethers.utils.parseEther(amount), 6);
               console.log(signer.address, "balance:", ethers.utils.formatEther(await token.balanceOf(signer.address)));
           }
       }
